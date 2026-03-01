@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, BarChart, Bar } from 'recharts';
-import { Activity, Thermometer, Home, TrendingUp, User, PieChart } from 'lucide-react';
+import { Activity, Thermometer, Home, TrendingUp, User, PieChart, RefreshCw } from 'lucide-react';
 
 const API_KEY = process.env.REACT_APP_FRED_API_KEY;
 
@@ -11,95 +11,113 @@ const MacroDashboard = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Charts Data
         const fetchSeries = async (id) => {
           const res = await fetch(`https://api.stlouisfed.org/fred/series/observations?series_id=${id}&api_key=${API_KEY}&file_type=json`);
           const json = await res.json();
-          return json.observations.map(o => ({ date: o.date, value: parseFloat(o.value) })).slice(-50);
+          // Filter out any "empty" dots so the chart doesn't break
+          return (json.observations || [])
+            .filter(o => o.value !== ".")
+            .map(o => ({ date: o.date, value: parseFloat(o.value) }))
+            .slice(-40);
         };
 
-        // Vitals Data (Latest single point)
         const fetchLatest = async (id) => {
-          const res = await fetch(`https://api.stlouisfed.org/fred/series/observations?series_id=${id}&api_key=${API_KEY}&file_type=json&sort_order=desc&limit=1`);
+          const res = await fetch(`https://api.stlouisfed.org/fred/series/observations?series_id=${id}&api_key=${API_KEY}&file_type=json&sort_order=desc&limit=5`);
           const json = await res.json();
-          return json.observations[0].value;
+          // Find the first actual number in the last 5 days (skips weekends/holidays)
+          const validEntry = json.observations.find(o => o.value !== ".");
+          return validEntry ? validEntry.value : "N/A";
         };
 
-        const [tData, oData, sData, hData] = await Promise.all([
-          fetchSeries('DGS10'), fetchSeries('DCOILWTICO'), fetchSeries('SP500'), fetchSeries('HOUST')
+        // We pull everything at once
+        const [tData, oData, sData, hData, sent, cpiVal, affVal] = await Promise.all([
+          fetchSeries('DGS10'), 
+          fetchSeries('DCOILWTICO'), 
+          fetchSeries('SP500'), 
+          fetchSeries('HOUST'),
+          fetchLatest('UMCSENT'),
+          fetchLatest('CPIAUCSL'),
+          fetchLatest('FIXHAI')
         ]);
 
         setData({ treasury: tData, oil: oData, sp500: sData, housing: hData, loading: false });
-        
-        setVitals({
-          sentiment: await fetchLatest('UMCSENT'),
-          cpi: await fetchLatest('CPIAUCSL'),
-          affordability: await fetchLatest('FIXHAI')
-        });
+        setVitals({ sentiment: sent, cpi: cpiVal, affordability: affVal });
+
       } catch (e) {
-        console.error(e);
+        console.error("Dashboard Error:", e);
         setData(prev => ({ ...prev, loading: false }));
       }
     };
     if (API_KEY) fetchData();
   }, []);
 
-  if (data.loading) return <div className="min-h-screen bg-black text-white flex items-center justify-center font-mono uppercase tracking-widest">Updating Andrew's Terminal...</div>;
+  if (data.loading) return (
+    <div className="min-h-screen bg-black text-slate-500 flex items-center justify-center font-mono uppercase tracking-widest text-xs">
+      <RefreshCw className="animate-spin mr-3" size={16} /> Initializing Andrew's Terminal...
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-black text-slate-200 p-8 font-sans">
-      {/* Header Rebrand */}
-      <div className="mb-10 border-b border-slate-800 pb-6 flex justify-between items-end">
-        <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">ANDREW'S US MACRO TERMINAL</h1>
-          <p className="text-slate-500 text-sm font-mono mt-1 underline decoration-blue-500">REAL-TIME ECONOMIC SURVEILLANCE // 2026</p>
-        </div>
+      <div className="mb-10 border-b border-slate-800 pb-6">
+        <h1 className="text-3xl font-bold text-white tracking-tight uppercase">Andrew's US Macro Terminal</h1>
+        <p className="text-slate-500 text-xs font-mono mt-2 tracking-widest">REAL-TIME DATA STREAM // ST. LOUIS FED</p>
       </div>
 
-      {/* Expanded Vitals Row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6 mb-10">
-        <div className="bg-slate-900 p-5 rounded-xl border border-slate-800">
-          <div className="flex items-center gap-2 text-slate-400 text-xs uppercase mb-1"><User size={14}/> Consumer Sentiment</div>
-          <div className="text-3xl font-mono font-bold text-emerald-400">{vitals.sentiment}</div>
-        </div>
-        <div className="bg-slate-900 p-5 rounded-xl border border-slate-800">
-          <div className="flex items-center gap-2 text-slate-400 text-xs uppercase mb-1"><PieChart size={14}/> CPI (Inflation Index)</div>
-          <div className="text-3xl font-mono font-bold text-rose-500">{vitals.cpi}</div>
-        </div>
-        <div className="bg-slate-900 p-5 rounded-xl border border-slate-800">
-          <div className="flex items-center gap-2 text-slate-400 text-xs uppercase mb-1"><Home size={14}/> Housing Affordability</div>
-          <div className="text-3xl font-mono font-bold text-blue-400">{vitals.affordability}</div>
-        </div>
-        <div className="bg-slate-900 p-5 rounded-xl border border-slate-800">
-          <div className="flex items-center gap-2 text-slate-400 text-xs uppercase mb-1"><TrendingUp size={14}/> S&P 500 Index</div>
-          <div className="text-3xl font-mono font-bold text-white">{(data.sp500[data.sp500.length - 1]?.value).toLocaleString()}</div>
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+        <VitalCard title="Consumer Sentiment" value={vitals.sentiment} icon={<User size={14}/>} color="text-emerald-400" />
+        <VitalCard title="CPI (Inflation)" value={vitals.cpi} icon={<PieChart size={14}/>} color="text-rose-500" />
+        <VitalCard title="Housing Affordability" value={vitals.affordability} icon={<Home size={14}/>} color="text-blue-400" />
+        <VitalCard title="S&P 500 Index" value={data.sp500.length > 0 ? data.sp500[data.sp500.length - 1].value.toLocaleString() : "..."} icon={<TrendingUp size={14}/>} color="text-white" />
       </div>
 
-      {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800">
-          <h3 className="text-blue-400 font-bold mb-4 flex items-center gap-2 uppercase text-xs tracking-widest"><Thermometer size={16}/> 10Y Treasury Yield</h3>
-          <div className="h-64"><ResponsiveContainer><LineChart data={data.treasury}><CartesianGrid stroke="#1e293b" vertical={false} /><XAxis dataKey="date" hide /><YAxis hide domain={['auto', 'auto']} /><Tooltip contentStyle={{backgroundColor:'#000', border:'none'}} /><Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={3} dot={false} /></LineChart></ResponsiveContainer></div>
-        </div>
-        
-        <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800">
-          <h3 className="text-emerald-400 font-bold mb-4 flex items-center gap-2 uppercase text-xs tracking-widest"><Activity size={16}/> WTI Crude Oil</h3>
-          <div className="h-64"><ResponsiveContainer><AreaChart data={data.oil}><XAxis dataKey="date" hide /><YAxis hide domain={['auto', 'auto']} /><Area type="monotone" dataKey="value" stroke="#10b981" fill="#10b981" fillOpacity={0.2} /></AreaChart></ResponsiveContainer></div>
-        </div>
-
-        <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800">
-          <h3 className="text-white font-bold mb-4 flex items-center gap-2 uppercase text-xs tracking-widest"><TrendingUp size={16}/> S&P 500 Performance</h3>
-          <div className="h-64"><ResponsiveContainer><LineChart data={data.sp500}><CartesianGrid stroke="#1e293b" vertical={false} /><XAxis dataKey="date" hide /><YAxis hide domain={['auto', 'auto']} /><Line type="monotone" dataKey="value" stroke="#fff" strokeWidth={2} dot={false} /></LineChart></ResponsiveContainer></div>
-        </div>
-
-        <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800">
-          <h3 className="text-orange-400 font-bold mb-4 flex items-center gap-2 uppercase text-xs tracking-widest"><Home size={16}/> New Housing Starts</h3>
-          <div className="h-64"><ResponsiveContainer><BarChart data={data.housing}><Bar dataKey="value" fill="#fb923c" /></BarChart></ResponsiveContainer></div>
-        </div>
+        <ChartBox title="10Y Treasury Yield" data={data.treasury} color="#3b82f6" icon={<Thermometer size={16}/>} type="line" />
+        <ChartBox title="WTI Crude Oil" data={data.oil} color="#10b981" icon={<Activity size={16}/>} type="area" />
+        <ChartBox title="S&P 500 Performance" data={data.sp500} color="#ffffff" icon={<TrendingUp size={16}/>} type="line" />
+        <ChartBox title="New Housing Starts" data={data.housing} color="#fb923c" icon={<Home size={16}/>} type="bar" />
       </div>
     </div>
   );
 };
+
+// Simplified components to keep code clean and prevent "Unterminated String" errors
+const VitalCard = ({ title, value, icon, color }) => (
+  <div className="bg-slate-900/80 border border-slate-800 p-5 rounded-xl">
+    <div className="flex items-center gap-2 text-slate-500 text-[10px] uppercase font-bold mb-1">{icon} {title}</div>
+    <div className={`text-2xl font-mono font-bold ${color}`}>{value}</div>
+  </div>
+);
+
+const ChartBox = ({ title, data, color, icon, type }) => (
+  <div className="bg-slate-900/40 border border-slate-800 p-6 rounded-2xl shadow-xl">
+    <h3 className={`text-[10px] font-bold mb-6 flex items-center gap-2 uppercase tracking-[0.2em]`} style={{color: color}}>
+      {icon} {title}
+    </h3>
+    <div className="h-48">
+      <ResponsiveContainer width="100%" height="100%">
+        {type === 'line' ? (
+          <LineChart data={data}>
+            <CartesianGrid stroke="#1e293b" vertical={false} strokeDasharray="3 3" />
+            <XAxis dataKey="date" hide />
+            <YAxis hide domain={['auto', 'auto']} />
+            <Tooltip contentStyle={{backgroundColor:'#000', border:'1px solid #334155'}} />
+            <Line type="monotone" dataKey="value" stroke={color} strokeWidth={2} dot={false} />
+          </LineChart>
+        ) : type === 'area' ? (
+          <AreaChart data={data}>
+            <XAxis dataKey="date" hide />
+            <YAxis hide domain={['auto', 'auto']} />
+            <Area type="monotone" dataKey="value" stroke={color} fill={color} fillOpacity={0.1} />
+          </AreaChart>
+        ) : (
+          <BarChart data={data}>
+            <Bar dataKey="value" fill={color} radius={[2, 2, 0, 0]} />
+          </BarChart>
+        )}
+      </ResponsiveContainer>
+    </div>
+  </div>
+);
 
 export default MacroDashboard;
