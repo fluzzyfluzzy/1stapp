@@ -107,3 +107,42 @@ const MacroDashboard = () => {
 };
 
 // Internal Components for Cleanliness
+const VitalCard = ({ title, value, icon, color }) => (
+  <div className="bg-slate-900/60 border border-slate-800/50 p-6 rounded-xl hover:border-slate-700 transition-colors">
+    <div className="flex items-center gap-2 text-slate-500 text-[10px] uppercase font-bold mb-2 tracking-widest italic opacity-80">{icon} {title}</div>
+    <div className={`text-3xl font-mono font-black ${color}`}>{value}</div>
+  </div>
+);
+
+const ChartBox = ({ title, data, color, icon, type }) => (
+  <div className="bg-slate-900/30 border border-slate-800/50 p-6 rounded-2xl">
+    <h3 className="text-[10px] font-black mb-6 flex items-center gap-2 uppercase tracking-[0.3em] opacity-70" style={{color: color}}>
+      {icon} {title}
+    </h3>
+    <div className="h-56">
+      <ResponsiveContainer width="100%" height="100%">
+        {type === 'line' ? (
+          <LineChart data={data}>
+            <CartesianGrid stroke="#1e293b" vertical={false} strokeDasharray="3 3" opacity={0.5} />
+            <XAxis dataKey="date" hide />
+            <YAxis hide domain={['auto', 'auto']} />
+            <Tooltip contentStyle={{backgroundColor:'#000', border:'1px solid #334155', fontSize: '12px'}} itemStyle={{color: color}} />
+            <Line type="monotone" dataKey="value" stroke={color} strokeWidth={3} dot={false} animationDuration={1000} />
+          </LineChart>
+        ) : type === 'area' ? (
+          <AreaChart data={data}>
+            <XAxis dataKey="date" hide />
+            <YAxis hide domain={['auto', 'auto']} />
+            <Area type="monotone" dataKey="value" stroke={color} fill={color} fillOpacity={0.1} animationDuration={1000} />
+          </AreaChart>
+        ) : (
+          <BarChart data={data}>
+            <Bar dataKey="value" fill={color} radius={[4, 4, 0, 0]} animationDuration={1000} />
+          </BarChart>
+        )}
+      </ResponsiveContainer>
+    </div>
+  </div>
+);
+
+export default MacroDashboard;
